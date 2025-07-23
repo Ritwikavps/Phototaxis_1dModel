@@ -1,4 +1,4 @@
-function NonLinOrNo = FrontNonLinTest_PkWdthsAndHts(Xvec, FrontsY, WdthToHtRatio_Lt)
+function NonLinOrNo = FrontNonLinTest_PkWdthsAndHts(Xvec, FrontsY, HtToWdthRatio_Lt)
 
 %Ritwika VPS, JUne 2025
 %This function gets peak widths and heights for each 'peak' (feature) in a given bacterial front to test for non-linearity onset. The peak widths are computed by estimating distance
@@ -8,7 +8,7 @@ function NonLinOrNo = FrontNonLinTest_PkWdthsAndHts(Xvec, FrontsY, WdthToHtRatio
 % Then, non-linearity is assessed by checkig if there are features that have height exceeding some factor of the peak width
 %
 % Inputs: - Xvec, FrontsY: front x and y values
-%           - WdthToHtRatioLt: ratio of peak width to height to determine non-linearity onset. A ratio less than this set ratio being present in the front will trigger NonLinOrNo to 1
+%         - HtToWdthRatio_Lt: ratio of peak height to width to determine non-linearity onset. A ratio greater than this set ratio being present in the front will trigger NonLinOrNo to 1
 %                              indicating non-linearity onset
 % 
 % Outputs: NonLinOrNo: logical determining non linearity onset. 1 for yes, 0 for no.
@@ -167,7 +167,7 @@ if ~isempty(pks) && ~isempty(pks_neg) %only proceed if there are peaks and troug
     end
 
     Inds = 1:numel(PkHt);
-    NonLinInds = Inds(PkWdth./PkHt < WdthToHtRatio_Lt);
+    NonLinInds = Inds(PkHt./PkWdth > HtToWdthRatio_Lt);
     if ~isempty(NonLinInds)
         NonLinOrNo = 1;
     end

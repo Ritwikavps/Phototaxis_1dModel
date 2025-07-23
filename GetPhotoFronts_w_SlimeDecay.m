@@ -1,4 +1,4 @@
-function [ZeroContouryCell,TimeVec,Xvec,Yvec,Final_C, Final_S, OpStruct, OpFname] = GetPhotoFronts_w_SlimeDecay(Cmean_nondim,fc_nondim, tau_nondim, graphout)
+function [ZeroContouryCell,TimeVec,Xvec,Yvec,Final_C, Final_S, OpStruct, OpFname] = GetPhotoFronts_w_SlimeDecay(Cmean_nondim,fc_nondim, tau_nondim, graphout, T_actual, dt_DivFactor)
 
     %Ritwika VPS; Jun 2025 (Modified from Tristan Ursell's code (see below))
     % This function gets bacterial fronts from 2d phototaxis simulations with slime decay (because that is the equivalent model to teh 1d model). Note that this realisation of the 
@@ -24,6 +24,9 @@ function [ZeroContouryCell,TimeVec,Xvec,Yvec,Final_C, Final_S, OpStruct, OpFname
     %         - tau_nondim: non-dimensionalised slime decay constant (represented by tau prior to non-dimensionalisation and by tau_tilde after non-dimensionalisation in the paper;
     %                       expressed as a power of 2, to easily match with Fig 9 in the Motility enhancement paper)
     %                               eg. tau_nondim = 2^(0), for simulation profile type 3 in the phase diagram in Fig. 9; units os seconds prior to nondimensionalisation
+    %         - T_actual: total actual time to simulate, set as an input because non-linearity onset times differ for different parameter combos
+    %         - dt_DivFactor: the factor to divide dt (dimensionless time step) by to make sure that all simulations have roughly the same number of time steps (if applicable; 
+    %                         set to 1 as default).
     % 
     % Outputs: ZeroContouryCell: The cell array with the fronts (estimated as the Y point at which the concentration falls to zero for that Y transect) at each time step. In um, 
     %                            because Xvec and Yvec are in um.
@@ -39,8 +42,6 @@ function [ZeroContouryCell,TimeVec,Xvec,Yvec,Final_C, Final_S, OpStruct, OpFname
     
     fout = 0; %file out logical
     circ = 0; %whether intial concentration is initialised as circular or not, logical 
-    WdthToHtRatio_Lt = 1; %set the ratio of the width of a finger (feature) to the height. If there is a feature in the front that has a lower ratio than this,
-    %the front is assessed to be non-linear. 
     
     %-------------------------------------------------------------------------------------------------------------------------------------------------------------
     %Define fixed parameters
@@ -59,11 +60,12 @@ function [ZeroContouryCell,TimeVec,Xvec,Yvec,Final_C, Final_S, OpStruct, OpFname
     % sigma=sig/X_nat;
     
     %Universal time and distance steps, for the simulation.
-    dt = 0.01; %Universal time step (dimensionless). This is how many units of the natural time scale makes up one simulation time step.
+    dt = 0.01/dt_DivFactor; %Universal time step (dimensionless). This is how many units of the natural time scale makes up one simulation time step. Divide by the provided factor 
+    % to roughly equalise number of simulation steps for all tested parameter values.
     dx = 0.25; %universal distance step (dimensionless). This is how many units of the natural length scale makes up one simulation grid square size.
     
     %Get the number of time steps
-    tact = 600000; %Actual time simulation, in seconds (source: Motility enhancement paper, see Methods)
+    tact = T_actual; %Origianally 600000s; %Actual time simulation, in seconds (source: Motility enhancement paper, see Methods)
     N = round(tact/T_nat/dt); %round to nearest 10
     
     %Set up phototactic bias
@@ -249,7 +251,6 @@ function [ZeroContouryCell,TimeVec,Xvec,Yvec,Final_C, Final_S, OpStruct, OpFname
             end
             %CdiffCell{counter} = Cdiff; %contourymaxCell{Ctr} = contourymax;
             ZeroContouryCell{Ctr} = ZeroContourY;
-            NonLinOrNo(Ctr) = FrontNonLinTest_PkWdthsAndHts(Xvec, ZeroContourY, WdthToHtRatio_Lt);
             clear Cdiff ZeroContourY %contourymax
         end
     
@@ -299,6 +300,8 @@ function [ZeroContouryCell,TimeVec,Xvec,Yvec,Final_C, Final_S, OpStruct, OpFname
     if graphout == 0
         close(h)
     elseif graphout == 1
+        %Waiting for user input before exiting
+        input('Please check to make sure that finger formation occured for this combination of parameters',"s")
         close(h1) %close figure
     end
     
@@ -311,9 +314,6 @@ function [ZeroContouryCell,TimeVec,Xvec,Yvec,Final_C, Final_S, OpStruct, OpFname
     OpStruct.Time = TimeVec;
     OpStruct.Xvec = Xvec;
     OpStruct.Yvec = Yvec;
-    
-    %Waiting for user input before exiting
-    %input('Please check to make sure that finger formation occured for this combination of parameters',"s")
 
 end
 

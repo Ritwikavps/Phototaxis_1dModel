@@ -5,6 +5,7 @@ clear; clc
 % that they match with phase diagrms in Figs 6 and 9 in the Motility enhancement paper.
 
 graphout = 0; %whether simulations generate figures showing simulation progress or not
+Tactual = 600000; %in seconds; total time to simulate; this is the baseline time set in the Motility enhancement paper, Ursell et al, 2013).
 %-------------------------------------------------------------------------------------------------------------------------------------------------------------
 %Sims without slime decay: in order of points 1, 2, 3, 4, 5, 6 in the phase space diagram in Fig 6 (numbers sourced from TU's simulation code).
 %-------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -17,7 +18,7 @@ fc_nondim_F6_2exp = log10(fc_nondim_F6)/log10(2);  %Get the exponents by taking 
 tau_nondim_F6 = Inf*ones(size(fc_nondim_F6)); %Fig 6 is simulations without slime decay
 
 %Sims for Fig. 6
-[Final_C_6A,Final_S_6A] = GetProofOfConceptProfiles_Par(Cmean_nondim_F6,fc_nondim_F6,tau_nondim_F6,graphout);
+[Final_C_6A,Final_S_6A] = GetProofOfConceptProfiles_Par(Cmean_nondim_F6,fc_nondim_F6,tau_nondim_F6,graphout, Tactual);
 
 
 %Plot Concentration profiles
@@ -62,7 +63,7 @@ tau_nondim_F9_2exp = [1, 0, 0, 2, -1, -2];
 tau_nondim_F9 = 2.^tau_nondim_F9_2exp;
 
 %Sims for Fig. 6
-[Final_C_9B,Final_S_9B] = GetProofOfConceptProfiles_Par(Cmean_nondim_F9,fc_nondim_F9,tau_nondim_F9,graphout);
+[Final_C_9B,Final_S_9B] = GetProofOfConceptProfiles_Par(Cmean_nondim_F9,fc_nondim_F9,tau_nondim_F9,graphout, Tactual);
 
 
 %Plot Concentration profiles
@@ -102,10 +103,11 @@ end
 % Inputs: CmeanVec, FcVec, TauVec: Vectors with values for scaled initial mean concetration, bias force, and slime decay time constant, in the order of 1-6 in the
 %                                  phase diagram for both figs (all vectors the same size)
 %         graphoput: graph out logical to pass to the simulation function
+%         Tactual: total actual time to simulate, set as an input because non-linearity onset times differ for different parameter combos.
 % 
 % Outputs: Final_C, Final_S: cell arrays with final bacterical (C) and slime (S) concentration profiles for each combo of parameters for the different cases demo-d in the phase
 %                            space diagrams.
-function [Final_C,Final_S] = GetProofOfConceptProfiles_Par(CmeanVec,FcVec,TauVec,graphout)
+function [Final_C,Final_S] = GetProofOfConceptProfiles_Par(CmeanVec,FcVec,TauVec,graphout, Tactual)
 
     N = numel(CmeanVec); %get number of elements
 
@@ -119,7 +121,8 @@ function [Final_C,Final_S] = GetProofOfConceptProfiles_Par(CmeanVec,FcVec,TauVec
     p = parpool(N); %open parallel pool
 
     parfor i = 1:numel(CmeanVec) %do the simulations, parallelised
-        [~,~,~,~,Final_C{i}, Final_S{i}, ~, ~] = GetPhotoFronts_w_SlimeDecay(CmeanVec(i),FcVec(i),TauVec(i),graphout);
+        [~,~,~,~,Final_C{i}, Final_S{i}, ~, ~] = GetPhotoFronts_w_SlimeDecay(CmeanVec(i),FcVec(i),TauVec(i),graphout, Tactual, 1); %1 for the factor to divide 
+        % dt (dimensionless time increment) so all sims carried out have roughly similar number of simulation time steps; see GetPhotoFronts_w_SlimeDecay.m.
     end
 
     delete(p) %delete parallel pool

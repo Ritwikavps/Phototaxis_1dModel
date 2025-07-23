@@ -1,0 +1,128 @@
+clear; clc
+
+%Ritwika VPS; 2025
+%This script loads .mat files (containing structs) with one sided FFT amp peaks (after dc comp removed) as well as the set of all k values with peaks in the specific data, from 
+% all sim runs for the Fc sweep, estimates growth rates curves for the entire simulation time as well as based on fronts up to onset of non-linearity time for vairous 
+% non-linearity finger height-to-width ratio threshold. 
+
+%In thsi iteration, where fc is teh parameter swept over, For each Struct_w_Data, we have the same values of tau and Cmean_ini (both nondim) constant. Struct_w_Data is indexed
+% by fc (nondim). Within each substruct (corresponding to a single combo of fc, tau, and Cmean_ini), we have 8 trials. 
+
+tic
+
+DataPath = '~/Desktop/GoogleDriveFiles/research/phototaxis/FreshAttempt2025';
+cd(DataPath)
+
+Dir_FcSweep = dir('FftOneSidedAmpPksDcRem_*.mat'); %read in all relevant .mat files (which are results of sweeping over fc)
+NLOnsetTimes_Thresh = [NaN 0.3 0.25 0.2 0.15 0.1]; %non-linearity onset thresholds (finger height-to-width threshold); NaN is for just using the simultion time without using 
+% any no linearity cut off
+NLOnsetTimes_Thresh_VarSuffix = {'SimTimeEnd','NLthresh_0_3','NLthresh_0_25','NLthresh_0_2','NLthresh_0_15','NLthresh_0_1'};
+
+p = parpool(8);
+
+for i1_struct = 1:numel(Dir_FcSweep) %go through list of mat files
+
+    CurrStruct = load(Dir_FcSweep(i1_struct).name); %load current mat file
+    Struct_w_Data = CurrStruct.FFTStruct; %get the structure
+
+    %CHECKS!!
+    u_tauVals = unique([Struct_w_Data.tau_nondim]);
+    u_CmeanVals = unique([Struct_w_Data.Cmean_nondim]);
+    u_fcVals = unique([Struct_w_Data.Fc_nondim]);
+    
+    %Because each .mat file corresponds to a single sweep across fc values with tau and Cmean_ini values the same across the entire sweep, the number of unique tau vals and the
+    % number of unique Cmean_ini vals should be 1, while the number of unique fc values should be the same as the number of fc values. Note, the struct is indexed by the fc value.
+    if (numel(u_tauVals) ~= 1) || (numel(u_CmeanVals) ~= 1) || (numel(u_fcVals) ~= numel(Struct_w_Data))
+        error('Number of unique parameters is not as expected for the sim rin. JAIL!')
+    end
+
+    for i_fc = 1:numel(Struct_w_Data)  %go through each fc value
+        
+        Substruct_i = Struct_w_Data(i_fc); %get the substrcutre corresponding to the i-th fc value
+        NumTrials = numel(Substruct_i.All_kVals_wPks); %get the number of trials; TimeVals is a cell array with each element being a vector with all time values in 
+        %that trial sim run
+
+        %CHECKS
+        % Check 1: all k value vectors are the same for each trial. Note that this does not necessarily have to be true because some sim runs may not have peaks at the same 
+        % k values as others even for the same parameter combo. However, I am writing the rest of thsi script based on this assumption, so the script needs to be adapted if the
+        % list of k values with peaks is not the same for all trials for a given parameter combo.
+        wrapper_keq = @(x) isequal(Substruct_i.All_kVals_wPks{1},x); %wrapper for cellfun below
+        Chk_kvals_eq = cellfun(wrapper_keq, Substruct_i.All_kVals_wPks);
+        if ~all(Chk_kvals_eq) %if every check does not come back true
+            error('The list of k values with peaks is not the same for all sim runs for this parameter combo. Adapt script accordingly')
+        end
+
+        % Check 2: all vectors with all sim time points are the same for each trial. 
+        wrapper_times = @(x) isequal(Substruct_i.AllTimeVals{1},x) ;
+        Chk_alltimes_eq = cellfun(wrapper_times, Substruct_i.AllTimeVals);
+        if ~all(Chk_alltimes_eq) %if every check does not come back true
+            error('The list of all sim time points (not the time values with peaks in each sim) is not the same for all sim runs for this parameter combo. JAIL!')
+        end
+
+        for j_nonlin = 1:numel(NLOnsetTimes_Thresh) %go through each non-linearity threshold
+
+            %Initialise cell arrays to store parfor growth rate fit results in 
+            GrowthRate_ifc_jnonlin = cell(NumTrials,1);
+            GrowthRatePreFac_ifc_jnonlin = cell(NumTrials,1);
+            FitRsq_ifc_jnonlin = cell(NumTrials,1);
+            NumPtsFit_ifc_jnonlin = cell(NumTrials,1);
+
+            parfor j1_trial  = 1:NumTrials %parallelise across trials
+    
+                All_kVals_wPks_j = Substruct_i.All_kVals_wPks{j1_trial};
+                AmpPks_cell_Processed_j = Substruct_i.AmpPks_cell_Processed{j1_trial};
+                Time_wPks_s_j = Substruct_i.Time_wPks_s{j1_trial};
+                NonLinOnsetTimes = [Substruct_i.AllTimeVals{j1_trial}(end) %This is simply the last time point in the simulation because we do not use any nonlinearity cut off
+                    %and just estimate growth rate for the entire sim.
+                                    Substruct_i.TimeAct_NonLinOnset_0_3(j1_trial) 
+                                    Substruct_i.TimeAct_NonLinOnset_0_25(j1_trial)  
+                                    Substruct_i.TimeAct_NonLinOnset_0_2(j1_trial)
+                                    Substruct_i.TimeAct_NonLinOnset_0_15(j1_trial)
+                                    Substruct_i.TimeAct_NonLinOnset_0_1(j1_trial)];  %This is a lil inefficient because this vector gets defined every j1_trial iteration 
+                %instead of every j_nonlin iteration, but I want to be able to index into this for the relevant non linear threshold.
+
+                % Check 3: whether all other cutoff times are less than or equal to the ;
+                if  ~all(NonLinOnsetTimes(2:end) <= NonLinOnsetTimes(1))
+                    error('Non linearity onset times for various thresholds is not less than or equal to final sim time for all onset thresholds. JAIL!')
+                end
+
+                %Check 4: Check if any non linearity onset time is NaN (this would mean that all simulation time points are deemed non linear and this shouldn't be the case).
+                if any(isnan(NonLinOnsetTimes))
+                    error('There is at least one nonlinearity onset time that is NaN. Investigate this.')
+                end
+
+                [GrowthRate_ifc_jnonlin{j1_trial,1}, GrowthRatePreFac_ifc_jnonlin{j1_trial,1}, FitRsq_ifc_jnonlin{j1_trial,1}, NumPtsFit_ifc_jnonlin{j1_trial,1}] = ...
+                                        GetGrowthRates(All_kVals_wPks_j,AmpPks_cell_Processed_j,Time_wPks_s_j,NonLinOnsetTimes(j_nonlin)); %get non linearity onset time 
+                % corresponding to the finger height-to-width threshold indexed by j_nonlin, and growth rates only up to that time.
+            end
+
+            %get the field name for the various growth rate fit details for the current nonlinearity thresholld
+            FieldName_NLTime = ['UpToTime_' NLOnsetTimes_Thresh_VarSuffix{j_nonlin}]; 
+
+            %Store in output structure indexed by fc: growth rate fit details for vairous nonlinearity thresholds.
+            GrowthRateStruct(i_fc).(strcat('GrowthRate_',FieldName_NLTime)) = GrowthRate_ifc_jnonlin;
+            GrowthRateStruct(i_fc).(strcat('GrowthRatePreFac_',FieldName_NLTime)) = GrowthRatePreFac_ifc_jnonlin;
+            GrowthRateStruct(i_fc).(strcat('FitRsq_',FieldName_NLTime)) = FitRsq_ifc_jnonlin;
+            GrowthRateStruct(i_fc).(strcat('NumPtsFit_',FieldName_NLTime)) = NumPtsFit_ifc_jnonlin; 
+        end
+
+        %Store in output structure indexed by fc: parameters
+        GrowthRateStruct(i_fc).Fc_nondim = Substruct_i.Fc_nondim;
+        GrowthRateStruct(i_fc).Cmean_nondim = Substruct_i.Cmean_nondim;
+        GrowthRateStruct(i_fc).tau_nondim = Substruct_i.tau_nondim;
+        GrowthRateStruct(i_fc).kValswPks = Substruct_i.All_kVals_wPks{1}; %because we have checked that these k vals are the same for all trials for a given parameter combo
+    end
+
+    tdata = datetime; %get date and time info to save files if needed
+    fdate = [date '_' num2str(tdata.Hour) '-' num2str(tdata.Minute)];
+    FileNameToSave = ['GrowthRateResults_Photo2dSimsSweepFcNondim_CmeanNondim_' num2str(Substruct_i.Cmean_nondim) ...
+        '_TauNondim_' num2str(Substruct_i.tau_nondim) '_8Trials_dtAndTactScaled_' fdate '.mat'];
+    save(FileNameToSave,'GrowthRateStruct') 
+    clear GrowthRateStruct
+end
+
+delete(p)
+
+t_elap = toc;
+disp(['Time elapsed = ' num2str(t_elap/60) ' mins'])
+
